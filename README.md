@@ -3,7 +3,6 @@
 [![Latest Release](https://img.shields.io/github/release/observatorium/statectl.svg?style=flat-square)](https://github.com/observatorium/statectl/releases/latest)
 [![CI](https://github.com/observatorium/statectl/workflows/go/badge.svg)](https://github.com/observatorium/statectl/actions?query=workflow%3Ago)
 [![Go Report Card](https://goreportcard.com/badge/github.com/observatorium/statectl)](https://goreportcard.com/report/github.com/observatorium/statectl)
-[![Slack](https://img.shields.io/badge/join%20slack-%23statectl-brightgreen.svg)](https://gophers.slack.com/)
 
 ## Requirements
 
