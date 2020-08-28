@@ -4,7 +4,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,6 +15,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/observatorium/statectl/pkg/extkingpin"
+	"github.com/observatorium/statectl/pkg/project"
+	"github.com/observatorium/statectl/pkg/project/loader"
 	"github.com/observatorium/statectl/pkg/version"
 	"github.com/oklog/run"
 	"github.com/pkg/errors"
@@ -53,20 +57,40 @@ func main() {
 	logFormat := app.Flag("log.format", "Log format to use. Possible options: logfmt or json.").
 		Default(logFormatLogfmt).Enum(logFormatLogfmt, logFormatJson)
 
-	registerPropose(app)
+	defCacheDir, _ := os.UserCacheDir()
+	cacheDir := app.Flag("cache.dir", "Path for cache (e.g git repo checkouts).").Default(filepath.Join(defCacheDir, "statectl")).String()
 
-	cmd, setup := app.Parse()
+	// TODO(bwplotka): Auto-gen docs.
+	cfgPath := app.Flag("project.config-file", "Path for YAML configuration for project statectl file. All commands relates to certain project. See config.Project for format.").Default("./.statectl.yaml").String()
+
+	registerPropose(app)
+	registerDiff(app)
+
+	cmd, runner := app.Parse()
 	logger := setupLogger(*logLevel, *logFormat)
 
 	var g run.Group
+	{
+		ctx, cancel := context.WithCancel(context.Background())
+		g.Add(func() error {
+			b, err := ioutil.ReadFile(*cfgPath)
+			if err != nil {
+				return errors.Wrapf(err, "read file %v", *cfgPath)
+			}
 
-	if err := setup(&g, logger); err != nil {
-		// Use %+v for github.com/pkg/errors error to print with stack.
-		level.Error(logger).Log("err", fmt.Sprintf("%+v", errors.Wrapf(err, "preparing %s command failed", cmd)))
-		os.Exit(1)
+			cfg, err := loader.LoadProjectConfig(b)
+			if err != nil {
+				return errors.Wrapf(err, "load project from %v", *cfgPath)
+			}
+
+			p, err := project.New(ctx, logger, cfg, *cacheDir)
+			if err != nil {
+				return errors.Wrapf(err, "new project from %v", *cfgPath)
+			}
+			return runner(p)
+		}, func(err error) { cancel() })
 	}
-	// Dummy actor to immediately kill the group after the run function returns.
-	g.Add(func() error { return nil }, func(error) {})
+
 	// Listen for termination signals.
 	{
 		cancel := make(chan struct{})
@@ -79,7 +103,7 @@ func main() {
 
 	if err := g.Run(); err != nil {
 		// Use %+v for github.com/pkg/errors error to print with stack.
-		level.Error(logger).Log("err", fmt.Sprintf("%+v", errors.Wrapf(err, "%s command failed", cmd)))
+		fmt.Printf("%+v\n", errors.Wrapf(err, "%s command failed", cmd))
 		os.Exit(1)
 	}
 	level.Info(logger).Log("msg", "exiting")
@@ -95,38 +119,4 @@ func interrupt(logger log.Logger, cancel <-chan struct{}) error {
 	case <-cancel:
 		return errors.New("canceled")
 	}
-}
-
-func reload(logger log.Logger, cancel <-chan struct{}, r chan<- struct{}) error {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGHUP)
-	for {
-		select {
-		case s := <-c:
-			level.Info(logger).Log("msg", "caught signal. Reloading.", "signal", s)
-			select {
-			case r <- struct{}{}:
-				level.Info(logger).Log("msg", "reload dispatched.")
-			default:
-			}
-		case <-cancel:
-			return errors.New("canceled")
-		}
-	}
-}
-
-func getFlagsMap(flags []*kingpin.FlagModel) map[string]string {
-	flagsMap := map[string]string{}
-
-	// Exclude kingpin default flags to expose only Thanos ones.
-	boilerplateFlags := kingpin.New("", "").Version("")
-
-	for _, f := range flags {
-		if boilerplateFlags.GetFlag(f.Name) != nil {
-			continue
-		}
-		flagsMap[f.Name] = f.Value.String()
-	}
-
-	return flagsMap
 }

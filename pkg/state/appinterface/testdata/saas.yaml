@@ -1,0 +1,228 @@
+---
+$schema: /app-sre/saas-file-1.yml
+
+labels:
+  service: telemeter
+
+name: saas-telemeter
+description: SaaS tracking file for Telemeter services
+
+app:
+  $ref: /services/telemeter/app.yml
+
+instance:
+  $ref: /dependencies/ci-int/ci-int.yml
+
+slack:
+  workspace:
+    $ref: /dependencies/slack/coreos.yml
+  channel: team-monitoring-info
+
+authentication:
+  image:
+    path: app-sre/ci-int/redhat-registry-io-pull
+    field: all
+
+managedResourceTypes:
+  - Deployment
+  - Service
+  - ConfigMap
+  - StatefulSet
+  - Role
+  - RoleBinding
+  - ServiceAccount
+  - PodDisruptionBudget
+  - PersistentVolumeClaim
+  - PrometheusRule # adding everything that exists. this will be moved to a separate saas file
+
+imagePatterns:
+  - quay.io/conprof/conprof
+  - quay.io/thanos/thanos
+  - quay.io/cortexproject/cortex
+  - quay.io/observatorium
+  - quay.io/app-sre
+  - quay.io/openshift/origin-oauth-proxy
+  - quay.io/prometheus/memcached-exporter
+  - registry.example.com/rhel8/memcached
+  - quay.io/jpkroehling/all-in-one
+
+parameters:
+  PROXY_IMAGE: quay.io/openshift/origin-oauth-proxy
+  PROXY_IMAGE_TAG: 4.7.0
+
+resourceTemplates:
+  - name: observatorium
+    path: /manifests/production/observatorium-template.yaml
+    url: https://example.com/observatorium/configuration
+    parameters:
+      IMAGE: quay.io/app-sre/telemeter
+      OBSERVATORIUM_API_IMAGE: quay.io/observatorium/observatorium
+      THANOS_IMAGE: quay.io/thanos/thanos
+      JAEGER_AGENT_IMAGE: quay.io/app-sre/jaegertracing-jaeger-agent
+      STORAGE_CLASS: "gp2"
+      AUTHORIZE_URL: ${OCM_BASE_URL}/api/accounts_mgmt/v1/cluster_registrations
+    targets:
+      - namespace:
+          $ref: /services/telemeter/namespaces/stage.yml
+        # Some comment.
+        ref: 75c09bf3ce29a9862d762972d7f8dda85e17a8c4
+        parameters:
+          NAMESPACE: stage
+          IMAGE_TAG: '8e65e1c'
+          IMAGE_CANARY: quay.io/app-sre/telemeter
+          IMAGE_CANARY_TAG: 'b4f226c'
+          REPLICAS: 3
+          REPLICAS_CANARY: 0
+          TELEMETER_SERVER_CPU_REQUEST: 100m
+          TELEMETER_SERVER_CPU_LIMIT: 1
+          TELEMETER_SERVER_MEMORY_REQUEST: 100Mi
+          TELEMETER_SERVER_MEMORY_LIMIT: 1Gi
+          TELEMETER_FORWARD_URL: 'http://observatorium-thanos-receive.stage.svc.cluster.local:19291/api/v1/receive'
+          PROMETHEUS_AMS_REMOTE_WRITE_PROXY_TARGET: 'observatorium-thanos-receive'
+          OBSERVATORIUM_API_IMAGE_TAG: master-2020-09-22-v0.1.1-150-gb315f72
+          THANOS_CONFIG_SECRET: thanos-objectstorage
+          THANOS_S3_SECRET: telemeter-thanos-stage-s3
+          THANOS_IMAGE_TAG: master-2020-09-24-49dad93e
+          THANOS_RECEIVE_CONTROLLER_IMAGE_TAG: master-2020-02-06-b66e0c8
+          THANOS_QUERIER_REPLICAS: 2
+          THANOS_QUERIER_CPU_REQUEST: '50m'
+          THANOS_QUERIER_CPU_LIMIT: '250m'
+          THANOS_QUERIER_MEMORY_REQUEST: '100Mi'
+          THANOS_QUERIER_MEMORY_LIMIT: '512Mi'
+          THANOS_QUERY_FRONTEND_REPLICAS: 3
+          THANOS_QUERY_FRONTEND_CPU_REQUEST: '100m'
+          THANOS_QUERY_FRONTEND_CPU_LIMIT: '1'
+          THANOS_QUERY_FRONTEND_MEMORY_REQUEST: '256Mi'
+          THANOS_QUERY_FRONTEND_MEMORY_LIMIT: '1Gi'
+          THANOS_STORE_LOG_LEVEL: 'debug'
+          THANOS_STORE_REPLICAS: 1
+          THANOS_STORE_CPU_REQUEST: '50m'
+          THANOS_STORE_CPU_LIMIT: '250m'
+          THANOS_STORE_MEMORY_REQUEST: '512Mi'
+          THANOS_STORE_MEMORY_LIMIT: '2Gi'
+          THANOS_RECEIVE_REPLICAS: 3
+          THANOS_RECEIVE_CPU_REQUEST: '700m'
+          THANOS_RECEIVE_CPU_LIMIT: '700m'
+          THANOS_RECEIVE_MEMORY_REQUEST: '5Gi'
+          THANOS_RECEIVE_MEMORY_LIMIT: '5Gi'
+          THANOS_RECEIVE_LOG_LEVEL: 'debug'
+          THANOS_RECEIVE_DEBUG_ENV: '1'
+          THANOS_COMPACTOR_REPLICAS: 1
+          THANOS_COMPACTOR_PVC_REQUEST: '50Gi'
+          THANOS_STORE_CACHE_MEMORY_LIMIT_MB: 2048
+          JAEGER_AGENT_IMAGE_TAG: 1.16.0
+          MEMCACHED_IMAGE: registry.example.com/rhel8/memcached
+          MEMCACHED_IMAGE_TAG: 1.5
+          MEMCACHED_EXPORTER_IMAGE: quay.io/prometheus/memcached-exporter
+          MEMCACHED_EXPORTER_IMAGE_TAG: v0.6.0
+          TELEMETER_SERVER_TOKEN_EXPIRE_SECONDS: 43200
+      - namespace:
+          $ref: /services/telemeter/namespaces/production.yml
+        # Commit for example.com/observatorium/configuration repo.
+        ref: 75c09bf3ce29a9862d762972d7f8dda85e17a8c4
+        parameters:
+          NAMESPACE: production
+          IMAGE_TAG: '8e65e1c'
+          REPLICAS: 10
+          IMAGE_CANARY: quay.io/app-sre/telemeter
+          IMAGE_CANARY_TAG: '8e65e1c'
+          REPLICAS_CANARY: 0
+          TELEMETER_SERVER_CPU_REQUEST: 100m
+          TELEMETER_SERVER_CPU_LIMIT: 1500m
+          TELEMETER_SERVER_MEMORY_REQUEST: 100Mi
+          TELEMETER_SERVER_MEMORY_LIMIT: 1Gi
+          TELEMETER_FORWARD_URL: 'http://observatorium-thanos-receive.production.svc.cluster.local:19291/api/v1/receive'
+          PROMETHEUS_AMS_REMOTE_WRITE_PROXY_TARGET: 'observatorium-thanos-receive'
+          OBSERVATORIUM_API_IMAGE_TAG: master-2020-09-22-v0.1.1-150-gb315f72
+          OBSERVATORIUM_API_REPLICAS: 3
+          THANOS_CONFIG_SECRET: thanos-objectstorage
+          THANOS_S3_SECRET: telemeter-thanos-production-s3
+          THANOS_IMAGE_TAG: master-2020-09-24-49dad93e
+          THANOS_RECEIVE_CONTROLLER_IMAGE_TAG: master-2020-02-06-b66e0c8
+          THANOS_QUERIER_REPLICAS: 6
+          THANOS_RECEIVE_REPLICAS: 6
+          THANOS_STORE_REPLICAS: 1
+          THANOS_QUERIER_CPU_REQUEST: '1'
+          THANOS_QUERIER_CPU_LIMIT: '3'
+          THANOS_QUERIER_MEMORY_REQUEST: '10Gi'
+          THANOS_QUERIER_MEMORY_LIMIT: '15Gi'
+          THANOS_QUERY_FRONTEND_REPLICAS: 3
+          THANOS_QUERY_FRONTEND_CPU_REQUEST: '100m'
+          THANOS_QUERY_FRONTEND_CPU_LIMIT: '1'
+          THANOS_QUERY_FRONTEND_MEMORY_REQUEST: '256Mi'
+          THANOS_QUERY_FRONTEND_MEMORY_LIMIT: '1Gi'
+          THANOS_STORE_CPU_REQUEST: '1'
+          THANOS_STORE_CPU_LIMIT: '1'
+          THANOS_STORE_MEMORY_REQUEST: '20Gi'
+          THANOS_STORE_MEMORY_LIMIT: '20Gi'
+          THANOS_STORE_BUCKET_CACHE_REPLICAS: 10
+          THANOS_RECEIVE_CPU_REQUEST: '2'
+          THANOS_RECEIVE_CPU_LIMIT: '2'
+          THANOS_RECEIVE_MEMORY_REQUEST: '28Gi'
+          THANOS_RECEIVE_MEMORY_LIMIT: '28Gi'
+          THANOS_QUERIER_CACHE_MEMORY_REQUEST: '2Gi'
+          THANOS_QUERIER_CACHE_MEMORY_LIMIT: '2Gi'
+          THANOS_COMPACTOR_REPLICAS: 1
+          THANOS_COMPACTOR_PVC_REQUEST: '150Gi'
+          JAEGER_AGENT_IMAGE_TAG: 1.14.0
+          MEMCACHED_IMAGE: registry.example.com/rhel8/memcached
+          MEMCACHED_IMAGE_TAG: 1.5
+          MEMCACHED_EXPORTER_IMAGE: quay.io/prometheus/memcached-exporter
+          MEMCACHED_EXPORTER_IMAGE_TAG: v0.6.0
+  - name: observatorium-jaeger
+    path: /manifests/production/jaeger-template.yaml
+    url: https://example.com/observatorium/configuration
+    parameters:
+      IMAGE: quay.io/app-sre/jaegertracing-all-in-one
+    targets:
+      - namespace:
+          $ref: /services/telemeter/namespaces/stage.yml
+        ref: master
+        parameters:
+          NAMESPACE: stage
+          IMAGE: yolo
+          IMAGE_TAG: 'badger-v2-ubi-minimal'
+          REPLICAS: '1'
+          JAEGER_CPU_REQUEST: '100m'
+          JAEGER_MEMORY_REQUEST: '1Gi'
+          JAEGER_CPU_LIMITS: '500m'
+          JAEGER_MEMORY_LIMITS: '4Gi'
+      - namespace:
+          $ref: /services/telemeter/namespaces/production.yml
+        ref: 6a09089f2b5998db06ed1ee09438a7c3249996a4
+        parameters:
+          NAMESPACE: production
+          IMAGE_TAG: '1.16.0'
+          REPLICAS: '1'
+          JAEGER_CPU_REQUEST: '1'
+          JAEGER_MEMORY_REQUEST: '4Gi'
+          JAEGER_CPU_LIMITS: '2'
+          JAEGER_MEMORY_LIMITS: '8Gi'
+  - name: conprof
+    path: /manifests/production/conprof-template.yaml
+    url: https://example.com/observatorium/configuration
+    parameters:
+      IMAGE: quay.io/conprof/conprof
+    targets:
+      - namespace:
+          $ref: /services/telemeter/namespaces/stage.yml
+        ref: master
+        parameters:
+          NAMESPACE: stage
+          IMAGE_TAG: 'master-2020-09-23-08090ad'
+          CONPROF_REPLICAS: '1'
+          CONPROF_CPU_REQUEST: '100m'
+          CONPROF_MEMORY_REQUEST: '1Gi'
+          CONPROF_CPU_LIMITS: '500m'
+          CONPROF_MEMORY_LIMITS: '4Gi'
+      - namespace:
+          $ref: /services/telemeter/namespaces/production.yml
+        ref: d08ee5fb2826a448874ebb1ef3b746ae0486e87a
+        parameters:
+          NAMESPACE: production
+          IMAGE_TAG: 'master-2020-09-23-08090ad'
+          CONPROF_REPLICAS: '1'
+          CONPROF_CPU_REQUEST: '1'
+          CONPROF_MEMORY_REQUEST: '8Gi'
+          CONPROF_CPU_LIMITS: '2'
+          CONPROF_MEMORY_LIMITS: '16Gi'

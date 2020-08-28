@@ -8,8 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-kit/kit/log"
-	"github.com/oklog/run"
+	"github.com/observatorium/statectl/pkg/project"
 	"github.com/pkg/errors"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -18,20 +17,26 @@ type FlagClause interface {
 	Flag(name, help string) *kingpin.FlagClause
 }
 
-type SetupFunc func(*run.Group, log.Logger) error
+type ArgClause interface {
+	Arg(name, help string) *kingpin.ArgClause
+}
+
+type Run func(project *project.Project) error
 
 type AppClause interface {
 	FlagClause
+	ArgClause
+
 	Command(cmd string, help string) AppClause
 	Flags() []*kingpin.FlagModel
-	Setup(s SetupFunc)
+	Run(r Run)
 }
 
 // App is a wrapper around kingping.Application for easier use.
 type App struct {
 	FlagClause
-	app    *kingpin.Application
-	setups map[string]SetupFunc
+	app  *kingpin.Application
+	runs map[string]Run
 }
 
 // NewApp returns new App.
@@ -40,18 +45,18 @@ func NewApp(app *kingpin.Application) *App {
 	return &App{
 		app:        app,
 		FlagClause: app,
-		setups:     map[string]SetupFunc{},
+		runs:       map[string]Run{},
 	}
 }
 
-func (a *App) Parse() (cmd string, setup SetupFunc) {
+func (a *App) Parse() (cmd string, runner Run) {
 	cmd, err := a.app.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "error parsing commandline arguments: %v", os.Args))
+		_, _ = fmt.Fprintln(os.Stderr, errors.Wrapf(err, "error parsing commandline arguments: %v", os.Args))
 		a.app.Usage(os.Args[1:])
 		os.Exit(2)
 	}
-	return cmd, a.setups[cmd]
+	return cmd, a.runs[cmd]
 }
 
 func (a *App) Command(cmd string, help string) AppClause {
@@ -59,7 +64,8 @@ func (a *App) Command(cmd string, help string) AppClause {
 	return &appClause{
 		c:          c,
 		FlagClause: c,
-		setups:     a.setups,
+		ArgClause:  c,
+		runs:       a.runs,
 		prefix:     cmd,
 	}
 }
@@ -68,7 +74,8 @@ type appClause struct {
 	c *kingpin.CmdClause
 
 	FlagClause
-	setups map[string]SetupFunc
+	ArgClause
+	runs   map[string]Run
 	prefix string
 }
 
@@ -77,13 +84,14 @@ func (a *appClause) Command(cmd string, help string) AppClause {
 	return &appClause{
 		c:          c,
 		FlagClause: c,
-		setups:     a.setups,
+		ArgClause:  c,
+		runs:       a.runs,
 		prefix:     a.prefix + " " + cmd,
 	}
 }
 
-func (a *appClause) Setup(s SetupFunc) {
-	a.setups[a.prefix] = s
+func (a *appClause) Run(s Run) {
+	a.runs[a.prefix] = s
 }
 
 func (a *appClause) Flags() []*kingpin.FlagModel {
